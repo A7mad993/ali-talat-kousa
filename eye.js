@@ -100,12 +100,8 @@ function init(){
   controls.minDistance = 2.2;
   controls.maxDistance = 18;
   controls.enablePan = false;
-  /* على اللمس: إصبع واحد يبقى للصفحة (وإلا انحبس التمرير داخل النموذج)،
-     وإصبعان للتدوير والتكبير. النقر المفرد ما زال يختار الطبقة. */
-  if(isTouch){
-    controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
-    canvas.style.touchAction = 'pan-y';
-  }
+  /* لمس: الإعداد الافتراضي — إصبع يدوّر وإصبعان يكبّران.
+     الإطار لا يتجاوز 60vh فتبقى مساحة فوقه وتحته لتمرير الصفحة. */
   controls.addEventListener('start', () => { spin = false; syncSpinBtn(); });
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.5));
