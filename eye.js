@@ -20,7 +20,7 @@ const leaders = document.getElementById('eyeLeaders');
 const GROUPS = [
   { key:'cornea', match:['Cornea'], ar:'القرنية', en:'Cornea', ord:0, label:1,
     desc:'الطبقة الشفافة الأمامية التي تغطي القزحية والبؤبؤ، ومسؤولة عن نحو ثلثي قوة تركيز الضوء داخل العين. عليها تُجرى عمليات الليزر لتصحيح النظر، وسماكتها وخريطتها الطبوغرافية تحدّدان التقنية المناسبة.' },
-  { key:'iris', match:['iris'], ar:'القزحية والبؤبؤ', en:'Iris & pupil', ord:0.7, label:1,
+  { key:'iris', match:['iris'], ar:'القزحية والبؤبؤ', arS:'القزحية', en:'Iris & pupil', ord:0.7, label:1,
     desc:'الحلقة الملوّنة التي تتحكم بحجم البؤبؤ فتنظّم كمية الضوء الداخلة، تماماً كفتحة عدسة الكاميرا. الفتحة السوداء في مركزها هي البؤبؤ، ونوسّعه بالقطرات لفحص قاع العين.' },
   { key:'lens', match:['Lens'], ar:'العدسة', en:'Lens', ord:1.4, label:1,
     desc:'عدسة شفافة مرنة تركّز الضوء على الشبكية وتغيّر قوتها للرؤية القريبة. عتامتها مع العمر هي «الساد» أو الماء الأبيض، وتُستبدل جراحياً بعدسة صناعية.' },
@@ -34,11 +34,11 @@ const GROUPS = [
     desc:'الغلاف الأبيض القوي الذي يحمي كرة العين ويحافظ على شكلها، وترتبط به العضلات الستّ التي تحرّك العين.' },
   { key:'nerve', match:['Cylinder'], ar:'العصب البصري', en:'Optic nerve', ord:5.8, label:1,
     desc:'يحمل أكثر من مليون ليف عصبي من الشبكية إلى الدماغ. تلفه التدريجي بارتفاع ضغط العين هو جوهر مرض الجلوكوما.' },
-  { key:'artery', match:['Artery'], ar:'الشريان المركزي للشبكية', en:'Central retinal artery', ord:5.8, label:1,
+  { key:'artery', match:['Artery'], ar:'الشريان المركزي للشبكية', arS:'الشريان المركزي', en:'Central retinal artery', ord:5.8, label:1,
     desc:'يدخل مع العصب البصري ليغذّي الطبقات الداخلية للشبكية. انسداده يسبّب فقد بصر مفاجئاً وغير مؤلم.' },
-  { key:'vein', match:['Vein'], ar:'الوريد المركزي للشبكية', en:'Central retinal vein', ord:5.8,
+  { key:'vein', match:['Vein'], ar:'الوريد المركزي للشبكية', arS:'الوريد المركزي', en:'Central retinal vein', ord:5.8,
     desc:'يصرّف دم الشبكية عائداً من العين. انسداده من أسباب النزف داخل الشبكية وتورّم البقعة الصفراء.' },
-  { key:'muscles', match:['Cube'], ar:'العضلات المحرّكة', en:'Extraocular muscles', ord:5.8, label:1,
+  { key:'muscles', match:['Cube'], ar:'العضلات المحرّكة', arS:'العضلات', en:'Extraocular muscles', ord:5.8, label:1,
     desc:'ستّ عضلات ترتبط بالصلبة وتحرّك العين في كل الاتجاهات. اختلال توازنها هو سبب الحول.' },
 ];
 
@@ -66,6 +66,13 @@ const VIEW_EXPLODED  = Math.PI;  // وجه المقطع عند التمدّد
 const VIEW_Y = VIEW_ASSEMBLED;
 const HOME  = [0.25, 0.7, 9.6];
 const TIGHT = [1.15, 1.01, 6.95];
+/* الاتجاهات فقط — المسافة تُحسب من أبعاد الإطار لتلائم الشاشات الطولية */
+const DIR_HOME  = new THREE.Vector3(...HOME).normalize();
+const DIR_TIGHT = new THREE.Vector3(...TIGHT).normalize();
+let FIT_R = 1.35;            // نصف قطر الكرة المحيطة بالنموذج المجمّع
+let lastDist = 0;            // آخر مسافة تأطير — للحفاظ على تكبير المستخدم
+const isTouch = matchMedia('(hover:none) and (pointer:coarse)').matches;
+const isNarrow = () => innerWidth <= 720;
 
 init();
 
@@ -75,7 +82,7 @@ function init(){
     renderer = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:true });
   }catch(e){ return fail('متصفحك لا يدعم WebGL'); }
 
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, isTouch ? 1.75 : 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.12;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -93,6 +100,12 @@ function init(){
   controls.minDistance = 2.2;
   controls.maxDistance = 18;
   controls.enablePan = false;
+  /* على اللمس: إصبع واحد يبقى للصفحة (وإلا انحبس التمرير داخل النموذج)،
+     وإصبعان للتدوير والتكبير. النقر المفرد ما زال يختار الطبقة. */
+  if(isTouch){
+    controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_ROTATE };
+    canvas.style.touchAction = 'pan-y';
+  }
   controls.addEventListener('start', () => { spin = false; syncSpinBtn(); });
 
   scene.add(new THREE.AmbientLight(0xffffff, 0.5));
@@ -101,6 +114,8 @@ function init(){
   const f = new THREE.DirectionalLight(0xffd9b8, 0.8); f.position.set(-1.0,-3.0, 2.0); scene.add(f);
 
   addEventListener('resize', resize);
+  addEventListener('orientationchange', resize);
+  if(window.ResizeObserver) new ResizeObserver(resize).observe(host);
   resize();
   loadModel();
 }
@@ -133,6 +148,7 @@ function loadModel(){
     const gsize = gbox.getSize(new THREE.Vector3());
     const gctr  = gbox.getCenter(new THREE.Vector3());
     scaleK = 2.0 / Math.max(gsize.x, gsize.y, gsize.z);
+    FIT_R  = 0.5 * Math.max(gsize.x, gsize.y, gsize.z) * scaleK;   // = 1.0 وحدة
 
     model.position.sub(gctr);
     holder = new THREE.Group();
@@ -185,6 +201,10 @@ function loadModel(){
                    bases: meshes.map(m => m.position.clone()), center, offset:0 });
     });
 
+    /* إعادة التأطير بعد معرفة حجم كرة العين الفعلي */
+    lastDist = 0;
+    resize();
+
     buildLabels();
     bindUI();
     applyExplode(explode);
@@ -212,13 +232,27 @@ function buildLabels(){
     if(!p.label) return;
     const el = document.createElement('button');
     el.className = 'hot'; el.type = 'button';
-    el.innerHTML = `<span class="hot__dot"></span><span class="hot__txt">${p.ar}</span>`;
+    el.innerHTML = `<span class="hot__dot"></span><span class="hot__txt"></span>`;
     el.addEventListener('click', e => { e.stopPropagation(); select(p.key, false); });
     host.appendChild(el);
     const ln = document.createElementNS('http://www.w3.org/2000/svg', 'line');
     ln.setAttribute('class', 'leader');
     leaders.appendChild(ln);
     p.el = el; p.ln = ln;
+  });
+  labelNarrow = null;          // التسميات أُنشئت للتو ⇒ املأ نصّها الآن
+  syncLabelText();
+}
+
+/* الأسماء الطويلة لا تتّسع على الهاتف ⇒ نسخة مختصرة */
+let labelNarrow = null;
+function syncLabelText(){
+  const n = isNarrow();
+  if(n === labelNarrow) return;
+  labelNarrow = n;
+  parts.forEach(p => {
+    if(!p.el) return;
+    p.el.querySelector('.hot__txt').textContent = (n && p.arS) ? p.arS : p.ar;
   });
 }
 
@@ -239,15 +273,19 @@ function updateLabels(){
   const hostBox = host.getBoundingClientRect();
   let safeL = 20, safeR = w - 20;
   ['.stage__hud', '.stage__zoom'].forEach(sel => {
-    const el = host.querySelector(sel);
+    const el = host.parentElement.querySelector(sel);
     if(!el) return;
     const r = el.getBoundingClientRect();
+    /* لوحة التحكم تنزل تحت الإطار على الهاتف ⇒ لا تقتطع منه */
+    if(r.bottom <= hostBox.top + 1 || r.top >= hostBox.bottom - 1) return;
     const l = r.left - hostBox.left, rt = r.right - hostBox.left;
     if(l > w/2) safeR = Math.min(safeR, l - 14);
     else        safeL = Math.max(safeL, rt + 14);
   });
 
-  const rx = Math.min(w*0.30, (safeR - safeL)/2 - 30), ry = Math.min(h*0.34, h/2 - 52);
+  const pad = isNarrow() ? 16 : 30, edge = isNarrow() ? 34 : 52;
+  const rx = Math.min(w*(isNarrow() ? 0.36 : 0.30), (safeR - safeL)/2 - pad);
+  const ry = Math.min(h*(isNarrow() ? 0.42 : 0.34), h/2 - edge);
   const live = [];
 
   parts.forEach(p => {
@@ -264,18 +302,21 @@ function updateLabels(){
 
   ['R','L'].forEach(side => {
     const col = live.filter(o => (side === 'R') === (o.lx >= cx)).sort((a,b) => a.ly - b.ly);
-    const gap = 38;
+    const gap = isNarrow() ? 27 : 38;
     for(let i = 1; i < col.length; i++)
       if(col[i].ly - col[i-1].ly < gap) col[i].ly = col[i-1].ly + gap;
-    const over = col.length ? col[col.length-1].ly - (h - 44) : 0;
+    const m = isNarrow() ? 26 : 44;
+    const over = col.length ? col[col.length-1].ly - (h - m) : 0;
     if(over > 0) col.forEach(o => { o.ly -= over; });
-    col.forEach(o => { o.ly = Math.min(Math.max(o.ly, 44), h - 44); });
+    col.forEach(o => { o.ly = Math.min(Math.max(o.ly, m), h - m); });
   });
 
   live.forEach(o => {
     const { p, ax, ay, dist } = o;
     const halfW = (p.el.offsetWidth || 120) / 2 + 6;
-    const lx = Math.min(Math.max(o.lx, safeL + halfW), safeR - halfW);
+    const lx = isNarrow()
+      ? (o.lx < cx ? safeL + halfW : safeR - halfW)
+      : Math.min(Math.max(o.lx, safeL + halfW), safeR - halfW);
     p.el.classList.toggle('flip', lx < cx);
     p.el.style.left = lx + 'px';
     p.el.style.top  = o.ly + 'px';
@@ -333,7 +374,7 @@ function setExplode(v){
   b.setAttribute('aria-pressed', String(explodeTo > 0.25));
   b.querySelector('span').textContent = explodeTo > 0.25 ? 'تجميع العين' : 'عرض متمدّد';
   rotTo = explodeTo > 0.25 ? VIEW_EXPLODED : VIEW_ASSEMBLED;
-  flyTo(...(explodeTo > 0.25 ? HOME : TIGHT));
+  const cv = homeVec(explodeTo > 0.25); flyTo(cv.x, cv.y, cv.z);
 }
 
 function syncSpinBtn(){
@@ -419,14 +460,37 @@ function zoom(k){
 function flyTo(x, y, z){ fly = { from: camera.position.clone(), to: new THREE.Vector3(x, y, z), t: 0 }; }
 
 /* ==================== الحلقة ==================== */
+/* المسافة التي يملأ عندها النموذج البُعد الأضيق من الإطار */
+function fitDist(margin){
+  const vf = THREE.MathUtils.degToRad(camera.fov) / 2;
+  const hf = Math.atan(Math.tan(vf) * camera.aspect);
+  return (FIT_R * margin) / Math.sin(Math.min(vf, hf));
+}
+/* هامش أوسع على الشاشات العريضة لإفساح مكان للتسميات الجانبية */
+function camDist(exploded){
+  return fitDist((isNarrow() ? 1.72 : 1.62) * (exploded ? 1.42 : 1));
+}
+function homeVec(exploded){
+  return (exploded ? DIR_HOME : DIR_TIGHT).clone().multiplyScalar(camDist(exploded));
+}
+
 function resize(){
   const w = host.clientWidth, h = host.clientHeight;
   if(!w || !h) return;
   renderer.setSize(w, h, false);
-  const a = w / h;
-  camera.aspect = a;
-  camera.fov = Math.min(34 / Math.min(1, a), 58);
+  camera.aspect = w / h;
+  camera.fov = 34;
   camera.updateProjectionMatrix();
+
+  const d = camDist(explodeTo > 0.25);
+  controls.minDistance = d * 0.34;
+  controls.maxDistance = d * 2.6;
+  /* نحافظ على تكبير المستخدم نسبياً بدل القفز إلى وضع ثابت */
+  if(lastDist) camera.position.setLength(camera.position.length() * (d / lastDist));
+  else camera.position.copy(homeVec(false));
+  lastDist = d;
+  if(fly){ fly.to.copy(homeVec(explodeTo > 0.25)); }
+  if(parts.length) syncLabelText();
 }
 
 function loop(){
